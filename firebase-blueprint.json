@@ -1,0 +1,28 @@
+{
+  "entities": {
+    "documents": {
+      "title": "Study Documents",
+      "description": "Uploaded study presentations, notes, and academic files accessible across all devices",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "title": { "type": "string" },
+        "format": { "type": "string" },
+        "sizeFormatted": { "type": "string" },
+        "sizeBytes": { "type": "number" },
+        "uploadDate": { "type": "string" },
+        "category": { "type": "string" },
+        "downloadsCount": { "type": "number" },
+        "colorTheme": { "type": "string" },
+        "fileDataUrl": { "type": "string" },
+        "fileName": { "type": "string" },
+        "summary": { "type": "string" },
+        "tags": { "type": "array" },
+        "author": { "type": "string" },
+        "isUserUploaded": { "type": "boolean" },
+        "createdAtTimestamp": { "type": "string" }
+      },
+      "required": ["id", "title", "format"]
+    }
+  }
+}

@@ -5,7 +5,13 @@ import { DocumentCard } from './components/DocumentCard';
 import { FilterBar } from './components/FilterBar';
 import { INITIAL_DOCUMENTS } from './data/initialDocs';
 import { StudyDoc, FilterCategory, SortOption } from './types';
-import { FileSearch, ArrowUp } from 'lucide-react';
+import { FileSearch, ArrowUp, Cloud } from 'lucide-react';
+import {
+  subscribeToDocuments,
+  saveDocumentToCloud,
+  deleteDocumentFromCloud,
+  incrementDownloadCountInCloud,
+} from './utils/cloudStorage';
 import {
   getAllStoredDocuments,
   saveDocument,
@@ -18,23 +24,36 @@ export function App() {
   const [selectedFormat, setSelectedFormat] = useState<FilterCategory>('ALL');
   const [sortBy, setSortBy] = useState<SortOption>('latest');
   const [showScrollTop, setShowScrollTop] = useState(false);
+  const [isCloudSyncing, setIsCloudSyncing] = useState(true);
   const dropzoneRef = useRef<HTMLDivElement>(null);
 
-  // Initialize from persistent IndexedDB store
+  // Subscribe to real-time Cloud Firestore synchronization across all devices
   useEffect(() => {
     let isMounted = true;
+
+    // First load local cache for instantaneous rendering
     getAllStoredDocuments()
-      .then((docs) => {
-        if (isMounted) {
-          setDocuments(docs || []);
+      .then((localDocs) => {
+        if (isMounted && localDocs && localDocs.length > 0) {
+          setDocuments(localDocs);
         }
       })
-      .catch((err) => {
-        console.warn('Could not read from IndexedDB:', err);
-      });
+      .catch((e) => console.warn('Local read:', e));
+
+    // Listen to real-time cloud updates
+    const unsubscribe = subscribeToDocuments((cloudDocs) => {
+      if (!isMounted) return;
+      setIsCloudSyncing(false);
+      setDocuments(cloudDocs);
+      // Sync cloud state into local offline store
+      for (const d of cloudDocs) {
+        saveDocument(d);
+      }
+    });
 
     return () => {
       isMounted = false;
+      unsubscribe();
     };
   }, []);
 
@@ -47,20 +66,36 @@ export function App() {
     return () => window.removeEventListener('scroll', handleScroll);
   }, []);
 
-  const handleAddDocuments = (newDocs: StudyDoc[]) => {
+  const handleAddDocuments = async (newDocs: StudyDoc[]) => {
+    // Optimistically update UI
     setDocuments((prev) => [...newDocs, ...prev]);
-    // Persist each uploaded document in durable IndexedDB
+
+    // Save locally and persist to Cloud Firestore so all other devices see them immediately
     for (const doc of newDocs) {
       saveDocument(doc);
+      try {
+        await saveDocumentToCloud(doc);
+      } catch (err) {
+        console.error('Failed to sync document to cloud:', err);
+      }
     }
   };
 
-  const handleDeleteDocument = (id: string) => {
-    deleteStoredDocument(id);
+  const handleDeleteDocument = async (id: string) => {
+    // Optimistic delete
     setDocuments((prev) => prev.filter((d) => d.id !== id));
+    deleteStoredDocument(id);
+    try {
+      await deleteDocumentFromCloud(id);
+    } catch (err) {
+      console.error('Failed to delete document from cloud:', err);
+    }
   };
 
-  const handleDownloadSuccess = (id: string) => {
+  const handleDownloadSuccess = async (id: string) => {
+    const currentDoc = documents.find((d) => d.id === id);
+    const count = currentDoc?.downloadsCount || 0;
+
     setDocuments((prev) => {
       const updated = prev.map((doc) =>
         doc.id === id ? { ...doc, downloadsCount: doc.downloadsCount + 1 } : doc
@@ -71,6 +106,12 @@ export function App() {
       }
       return updated;
     });
+
+    try {
+      await incrementDownloadCountInCloud(id, count);
+    } catch (err) {
+      console.warn('Could not increment cloud count:', err);
+    }
   };
 
   const handleScrollToUpload = () => {
@@ -185,6 +226,13 @@ export function App() {
               />
             ))}
           </div>
+        ) : isCloudSyncing ? (
+          <div className="text-center py-16 px-4 bg-white/60 rounded-3xl border border-dashed border-slate-200 my-6 flex flex-col items-center justify-center">
+            <div className="w-12 h-12 rounded-2xl bg-indigo-50 text-indigo-600 flex items-center justify-center animate-pulse mb-3">
+              <Cloud className="w-6 h-6" />
+            </div>
+            <p className="text-sm font-medium text-slate-600">Connecting to cloud storage...</p>
+          </div>
         ) : documents.length === 0 ? (
           <div className="text-center py-16 px-4 bg-white/60 rounded-3xl border border-dashed border-slate-200 my-6">
             <div className="w-14 h-14 rounded-2xl bg-indigo-50 text-indigo-500 flex items-center justify-center mx-auto mb-4">
@@ -194,7 +242,7 @@ export function App() {
               No documents added yet
             </h3>
             <p className="text-sm text-slate-500 max-w-md mx-auto mt-1">
-              Drag &amp; drop or click the upload area above to add your study documents and presentations.
+              Drag &amp; drop or click the upload area above to add your study documents and presentations. They will sync automatically to all your devices!
             </p>
           </div>
         ) : (
