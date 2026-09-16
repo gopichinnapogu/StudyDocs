@@ -1,0 +1,6 @@
+{
+  "name": "StudyDocs",
+  "description": "Educational document platform for uploading, organizing, previewing, and downloading study materials, presentations, and lecture notes.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
