@@ -2,6 +2,7 @@ import React, { useState, useRef } from 'react';
 import { CloudUpload, CheckCircle2, Loader2 } from 'lucide-react';
 import { StudyDoc, ColorTheme } from '../types';
 import { formatFileSize, detectFormatFromFilename } from '../utils/downloadHelper';
+import { saveDocumentToCloud } from '../utils/cloudStorage';
 
 interface UploadDropzoneProps {
   onAddDocuments: (docs: StudyDoc[]) => void;
@@ -32,9 +33,9 @@ export const UploadDropzone: React.FC<UploadDropzoneProps> = ({
     const format = detectFormatFromFilename(file.name);
     const cleanTitle = file.name.replace(/\.[^/.]+$/, '').trim();
     const theme = THEME_ROTATION[(Date.now() + index) % THEME_ROTATION.length];
-    const clientDocId = `doc-${Date.now()}-${Math.random().toString(36).substring(2, 7)}`;
+    const clientDocId = `doc-${Date.now()}-${Math.random().toString(36).substring(2, 8)}`;
 
-    // 1. Also prepare a local dataUrl for instant offline preview/download if needed
+    // Read as DataURL
     let localDataUrl = '';
     try {
       localDataUrl = await new Promise<string>((resolve) => {
@@ -47,7 +48,9 @@ export const UploadDropzone: React.FC<UploadDropzoneProps> = ({
       console.warn('DataURL generation error:', e);
     }
 
-    // 2. Upload file binary to server API so ALL devices can access and download it
+    let downloadUrl: string | undefined = undefined;
+
+    // Also attempt server upload if backend is present
     try {
       const formData = new FormData();
       formData.append('file', file);
@@ -68,19 +71,16 @@ export const UploadDropzone: React.FC<UploadDropzoneProps> = ({
 
       if (res.ok) {
         const json = await res.json();
-        if (json.document) {
-          return {
-            ...json.document,
-            fileDataUrl: localDataUrl || json.document.fileDataUrl,
-          };
+        if (json.document && json.document.fileDownloadUrl) {
+          downloadUrl = json.document.fileDownloadUrl;
         }
       }
     } catch (err) {
-      console.warn('Server upload error, falling back to client document model:', err);
+      // Netlify or static host might not have /api/documents/upload, so fallback safely
+      console.warn('Server upload not reachable (static host), utilizing direct Firebase Firestore cloud sync');
     }
 
-    // Fallback if network issue
-    return {
+    const docItem: StudyDoc = {
       id: clientDocId,
       title: cleanTitle || file.name,
       format,
@@ -92,11 +92,18 @@ export const UploadDropzone: React.FC<UploadDropzoneProps> = ({
       colorTheme: theme,
       fileDataUrl: localDataUrl,
       fileName: file.name,
+      fileDownloadUrl: downloadUrl,
       summary: `Uploaded file (${format}) ready for study, review, and instant download.`,
       tags: ['Uploaded', format, 'Study Resource'],
-      author: 'You',
+      author: 'User',
       isUserUploaded: true,
     };
+
+    // Save immediately and directly to Firebase Cloud Firestore
+    // This guarantees that ANY device (including on Netlify, phone, mobile browser) sees it!
+    await saveDocumentToCloud(docItem);
+
+    return docItem;
   };
 
   const processFiles = async (files: FileList | File[]) => {
@@ -119,7 +126,7 @@ export const UploadDropzone: React.FC<UploadDropzoneProps> = ({
 
     if (newDocs.length > 0) {
       onAddDocuments(newDocs);
-      setUploadFeedback(`Uploaded ${newDocs.length} file${newDocs.length > 1 ? 's' : ''} to Cloud! Available on all devices.`);
+      setUploadFeedback(`Uploaded ${newDocs.length} file${newDocs.length > 1 ? 's' : ''} to Cloud! Synced across all devices.`);
       setTimeout(() => setUploadFeedback(null), 5000);
     }
   };
@@ -211,13 +218,13 @@ export const UploadDropzone: React.FC<UploadDropzoneProps> = ({
 
           {/* Heading */}
           <h2 className="mt-4 text-xl sm:text-2xl font-bold tracking-tight text-slate-800 font-display">
-            {isUploading ? 'Uploading to Cloud...' : 'Upload Presentations or Documents'}
+            {isUploading ? 'Syncing to Cloud Database...' : 'Upload Presentations or Documents'}
           </h2>
 
           {/* Sub-instruction */}
           <p className="mt-1.5 text-sm sm:text-base font-medium text-slate-600">
             {isUploading
-              ? 'Saving file so it is accessible on all your devices...'
+              ? 'Saving to Firebase Cloud so it is available across all your phones & devices...'
               : 'Click to upload or drag and drop files'}
           </p>
 

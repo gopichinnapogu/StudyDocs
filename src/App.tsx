@@ -27,7 +27,7 @@ export function App() {
   const [isCloudSyncing, setIsCloudSyncing] = useState(true);
   const dropzoneRef = useRef<HTMLDivElement>(null);
 
-  // Helper to fetch documents from server cloud database (guaranteed cross-device)
+  // Helper to fetch documents from server cloud database
   const fetchServerDocuments = async () => {
     try {
       const res = await fetch('/api/documents');
@@ -38,70 +38,48 @@ export function App() {
         }
       }
     } catch (e) {
-      console.warn('Could not fetch from server /api/documents:', e);
+      // Ignored if hosted on static CDN like Netlify
     }
     return null;
   };
 
-  // Synchronize on load and periodic polling fallback for instantaneous multi-device updates
   useEffect(() => {
     let isMounted = true;
 
-    const loadAll = async () => {
-      // 1. First fetch server documents (canonical cross-device store)
-      const serverDocs = await fetchServerDocuments();
-      if (isMounted && serverDocs) {
-        setDocuments(serverDocs);
-        setIsCloudSyncing(false);
-        for (const doc of serverDocs) {
-          saveDocument(doc);
-        }
-      } else {
-        // Fallback to local IndexedDB if server is slow
-        const local = await getAllStoredDocuments();
-        if (isMounted && local && local.length > 0) {
-          setDocuments(local);
-          setIsCloudSyncing(false);
-        }
+    // 1. First populate with cached local docs for instant first frame
+    getAllStoredDocuments().then((local) => {
+      if (isMounted && local && local.length > 0) {
+        setDocuments(local);
       }
-    };
+    });
 
-    loadAll();
-
-    // 2. Real-time Firebase Firestore listener as primary real-time stream
+    // 2. Real-time Firebase Cloud Firestore subscription (works everywhere: Phone, Laptop, Netlify, Dev)
     const unsubscribeFirestore = subscribeToDocuments((cloudDocs) => {
       if (!isMounted) return;
       setIsCloudSyncing(false);
-      if (cloudDocs && cloudDocs.length > 0) {
+      setDocuments(cloudDocs);
+      for (const doc of cloudDocs) {
+        saveDocument(doc);
+      }
+    });
+
+    // 3. Fallback server fetch for full-stack deployment
+    fetchServerDocuments().then((serverDocs) => {
+      if (isMounted && serverDocs && serverDocs.length > 0) {
         setDocuments((prev) => {
-          // Merge server URLs from previous or fetch
           const map = new Map<string, StudyDoc>();
-          prev.forEach((p) => map.set(p.id, p));
-          cloudDocs.forEach((c) => {
-            const existing = map.get(c.id);
-            map.set(c.id, {
-              ...c,
-              fileDownloadUrl: existing?.fileDownloadUrl || c.fileDownloadUrl,
-            });
+          serverDocs.forEach((d) => map.set(d.id, d));
+          prev.forEach((p) => {
+            if (!map.has(p.id)) map.set(p.id, p);
           });
           return Array.from(map.values());
         });
       }
     });
 
-    // 3. Periodic polling interval (every 4 seconds) to ensure other devices get newly uploaded files without manual reload
-    const pollInterval = setInterval(async () => {
-      if (!isMounted) return;
-      const polledDocs = await fetchServerDocuments();
-      if (isMounted && polledDocs) {
-        setDocuments(polledDocs);
-      }
-    }, 4000);
-
     return () => {
       isMounted = false;
       unsubscribeFirestore();
-      clearInterval(pollInterval);
     };
   }, []);
 
@@ -114,7 +92,7 @@ export function App() {
     return () => window.removeEventListener('scroll', handleScroll);
   }, []);
 
-  const handleAddDocuments = async (newDocs: StudyDoc[]) => {
+  const handleAddDocuments = (newDocs: StudyDoc[]) => {
     setDocuments((prev) => {
       const existingIds = new Set(prev.map((p) => p.id));
       const filteredNew = newDocs.filter((d) => !existingIds.has(d.id));
@@ -123,8 +101,6 @@ export function App() {
 
     for (const doc of newDocs) {
       saveDocument(doc);
-      // Sync metadata to Cloud Firestore
-      saveDocumentToCloud(doc).catch((e) => console.warn('Firestore sync:', e));
     }
   };
 
@@ -132,15 +108,15 @@ export function App() {
     setDocuments((prev) => prev.filter((d) => d.id !== id));
     deleteStoredDocument(id);
 
-    // 1. Delete from server filesystem & database
+    // 1. Delete from Firebase Cloud Firestore (syncs across all devices)
+    deleteDocumentFromCloud(id).catch((e) => console.warn('Firestore delete:', e));
+
+    // 2. Delete from server if server is active
     try {
       await fetch(`/api/documents/${id}`, { method: 'DELETE' });
     } catch (e) {
-      console.warn('Server delete error:', e);
+      // ignore
     }
-
-    // 2. Delete from Cloud Firestore
-    deleteDocumentFromCloud(id).catch((e) => console.warn('Firestore delete:', e));
   };
 
   const handleDownloadSuccess = async (id: string) => {
@@ -158,8 +134,8 @@ export function App() {
       return updated;
     });
 
-    fetch(`/api/documents/${id}/increment-download`, { method: 'POST' }).catch(() => {});
     incrementDownloadCountInCloud(id, count).catch(() => {});
+    fetch(`/api/documents/${id}/increment-download`, { method: 'POST' }).catch(() => {});
   };
 
   const handleScrollToUpload = () => {
