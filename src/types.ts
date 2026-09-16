@@ -22,6 +22,8 @@ export interface StudyDoc {
   colorTheme: ColorTheme;
   fileDataUrl?: string;
   fileName?: string;
+  fileDownloadUrl?: string;
+  storedFileName?: string;
   summary: string;
   tags: string[];
   author: string;

@@ -1,6 +1,18 @@
 import { StudyDoc } from '../types';
 
 export function triggerDocumentDownload(doc: StudyDoc) {
+  // If download URL from server storage exists (works across all devices)
+  if (doc.fileDownloadUrl) {
+    const a = document.createElement('a');
+    a.href = doc.fileDownloadUrl;
+    a.download = doc.fileName || `${doc.title}.${doc.format.toLowerCase()}`;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    return;
+  }
+
+  // If local base64/DataURL exists
   if (doc.fileDataUrl) {
     const a = document.createElement('a');
     a.href = doc.fileDataUrl;
@@ -11,7 +23,7 @@ export function triggerDocumentDownload(doc: StudyDoc) {
     return;
   }
 
-  // Generate an educational study packet for the sample document
+  // Generate study notes fallback
   const content = `=================================================================
 STUDYDOCS ACADEMIC REPOSITORY
 Document: ${doc.title}
@@ -24,23 +36,10 @@ OVERVIEW & ABSTRACT:
 ${doc.summary}
 
 TOPICS & KEY CONCEPTS COVERED:
-${doc.tags.map((t, idx) => `  ${idx + 1}. ${t}`).join('\n')}
-
-CORE STUDY NOTES & SUMMARY:
-1. Fundamental Definitions & Terminology
-   - Standard academic guidelines and definitions pertinent to ${doc.title}.
-   - Core theoretical principles, mathematical formulas, and practical algorithms.
-   - Recommended reference bibliography and supplementary lecture materials.
-
-2. Key Exam & Interview Takeaways
-   - Frequent problem patterns and algorithmic solutions.
-   - Conceptual questions and architectural diagrams.
-   - Key terminology and diagnostic checklists.
+${(doc.tags || []).map((t, idx) => `  ${idx + 1}. ${t}`).join('\n')}
 
 =================================================================
-Exported from StudyDocs (gopichinnapogu/StudyDocs)
-Repository: https://github.com/gopichinnapogu/StudyDocs
-All rights reserved. For educational use.
+StudyDocs Educational Resource
 =================================================================
 `;
 
