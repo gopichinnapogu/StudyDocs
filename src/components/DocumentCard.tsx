@@ -1,5 +1,5 @@
-import React from 'react';
-import { Download, FileText, Presentation, FileCode, Trash2 } from 'lucide-react';
+import React, { useState } from 'react';
+import { Download, FileText, Presentation, FileCode, Trash2, Loader2 } from 'lucide-react';
 import { StudyDoc, ColorTheme } from '../types';
 import confetti from 'canvas-confetti';
 import { triggerDocumentDownload } from '../utils/downloadHelper';
@@ -74,33 +74,33 @@ const THEME_MAP: Record<ColorTheme, ThemeConfig> = {
   },
   rose: {
     bgLight: 'bg-[#FFF1F2]/90 hover:bg-[#FFF1F2]',
-    blobColor: 'bg-[#E11D48]/15',
-    badgeBg: 'bg-[#E11D48]',
+    blobColor: 'bg-[#F43F5E]/15',
+    badgeBg: 'bg-[#F43F5E]',
     badgeText: 'text-white',
-    buttonBg: 'bg-[#E11D48]',
-    buttonHover: 'hover:bg-[#BE123C]',
+    buttonBg: 'bg-[#F43F5E]',
+    buttonHover: 'hover:bg-[#E11D48]',
     textColor: 'text-slate-900',
-    iconBg: 'from-[#FB7185] to-[#E11D48]',
+    iconBg: 'from-[#FB7185] to-[#F43F5E]',
   },
   teal: {
-    bgLight: 'bg-[#ECFEFF]/90 hover:bg-[#ECFEFF]',
-    blobColor: 'bg-[#06B6D4]/15',
-    badgeBg: 'bg-[#0891B2]',
+    bgLight: 'bg-[#F0FDFA]/90 hover:bg-[#F0FDFA]',
+    blobColor: 'bg-[#14B8A6]/15',
+    badgeBg: 'bg-[#0D9488]',
     badgeText: 'text-white',
-    buttonBg: 'bg-[#0891B2]',
-    buttonHover: 'hover:bg-[#0E7490]',
+    buttonBg: 'bg-[#0D9488]',
+    buttonHover: 'hover:bg-[#0F766E]',
     textColor: 'text-slate-900',
-    iconBg: 'from-[#22D3EE] to-[#0891B2]',
+    iconBg: 'from-[#2DD4BF] to-[#0D9488]',
   },
   indigo: {
-    bgLight: 'bg-[#EEF2FF]/90 hover:bg-[#EEF2FF]',
-    blobColor: 'bg-[#4F46E5]/15',
+    bgLight: 'bg-[#F5F3FF]/90 hover:bg-[#F5F3FF]',
+    blobColor: 'bg-[#6366F1]/15',
     badgeBg: 'bg-[#4F46E5]',
     badgeText: 'text-white',
     buttonBg: 'bg-[#4F46E5]',
     buttonHover: 'hover:bg-[#4338CA]',
     textColor: 'text-slate-900',
-    iconBg: 'from-[#6366F1] to-[#4338CA]',
+    iconBg: 'from-[#818CF8] to-[#4F46E5]',
   },
 };
 
@@ -109,24 +109,34 @@ export const DocumentCard: React.FC<DocumentCardProps> = ({
   onDelete,
   onDownloadSuccess,
 }) => {
+  const [isDownloading, setIsDownloading] = useState(false);
   const theme = THEME_MAP[doc.colorTheme] || THEME_MAP.indigo;
 
-  const handleDownload = (e?: React.MouseEvent) => {
+  const handleDownload = async (e?: React.MouseEvent) => {
     if (e) {
       e.stopPropagation();
     }
+    if (isDownloading) return;
 
-    // Trigger celebratory confetti burst
-    confetti({
-      particleCount: 35,
-      spread: 55,
-      origin: { y: 0.8 },
-      colors: ['#4F46E5', '#FF6B4A', '#10B981', '#06B6D4', '#CA8A04'],
-    });
+    setIsDownloading(true);
 
-    triggerDocumentDownload(doc);
-    if (onDownloadSuccess) {
-      onDownloadSuccess(doc.id);
+    try {
+      // Trigger celebratory confetti burst
+      confetti({
+        particleCount: 35,
+        spread: 55,
+        origin: { y: 0.8 },
+        colors: ['#4F46E5', '#FF6B4A', '#10B981', '#06B6D4', '#CA8A04'],
+      });
+
+      await triggerDocumentDownload(doc);
+      if (onDownloadSuccess) {
+        onDownloadSuccess(doc.id);
+      }
+    } catch (err) {
+      console.error('Download error:', err);
+    } finally {
+      setIsDownloading(false);
     }
   };
 
@@ -206,14 +216,24 @@ export const DocumentCard: React.FC<DocumentCardProps> = ({
       <div className="relative z-10 mt-5 pt-2">
         <button
           id={`download-btn-${doc.id}`}
+          disabled={isDownloading}
           onClick={(e) => {
             e.stopPropagation();
             handleDownload();
           }}
-          className={`w-full py-2.5 px-4 rounded-full font-semibold text-sm text-white shadow-sm flex items-center justify-center gap-2 transition-all duration-200 active:scale-98 ${theme.buttonBg} ${theme.buttonHover}`}
+          className={`w-full py-2.5 px-4 rounded-full font-semibold text-sm text-white shadow-sm flex items-center justify-center gap-2 transition-all duration-200 active:scale-98 ${theme.buttonBg} ${theme.buttonHover} ${isDownloading ? 'opacity-75 cursor-wait' : ''}`}
         >
-          <Download className="w-4 h-4 transition-transform group-hover:translate-y-0.5" />
-          <span>Download</span>
+          {isDownloading ? (
+            <>
+              <Loader2 className="w-4 h-4 animate-spin" />
+              <span>Preparing {doc.format}...</span>
+            </>
+          ) : (
+            <>
+              <Download className="w-4 h-4 transition-transform group-hover:translate-y-0.5" />
+              <span>Download {doc.format}</span>
+            </>
+          )}
         </button>
       </div>
     </div>

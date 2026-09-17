@@ -35,7 +35,7 @@ export const UploadDropzone: React.FC<UploadDropzoneProps> = ({
     const theme = THEME_ROTATION[(Date.now() + index) % THEME_ROTATION.length];
     const clientDocId = `doc-${Date.now()}-${Math.random().toString(36).substring(2, 8)}`;
 
-    // Read as DataURL
+    // Read exact binary file as base64 DataURL (with genuine mime type)
     let localDataUrl = '';
     try {
       localDataUrl = await new Promise<string>((resolve) => {
@@ -50,7 +50,7 @@ export const UploadDropzone: React.FC<UploadDropzoneProps> = ({
 
     let downloadUrl: string | undefined = undefined;
 
-    // Also attempt server upload if backend is present
+    // Attempt server upload if Express backend is running
     try {
       const formData = new FormData();
       formData.append('file', file);
@@ -76,8 +76,7 @@ export const UploadDropzone: React.FC<UploadDropzoneProps> = ({
         }
       }
     } catch (err) {
-      // Netlify or static host might not have /api/documents/upload, so fallback safely
-      console.warn('Server upload not reachable (static host), utilizing direct Firebase Firestore cloud sync');
+      console.warn('Server endpoint skipped (static deployment), utilizing direct Firebase cloud chunk sync');
     }
 
     const docItem: StudyDoc = {
@@ -93,14 +92,14 @@ export const UploadDropzone: React.FC<UploadDropzoneProps> = ({
       fileDataUrl: localDataUrl,
       fileName: file.name,
       fileDownloadUrl: downloadUrl,
+      mimeType: file.type || 'application/octet-stream',
       summary: `Uploaded file (${format}) ready for study, review, and instant download.`,
       tags: ['Uploaded', format, 'Study Resource'],
       author: 'User',
       isUserUploaded: true,
     };
 
-    // Save immediately and directly to Firebase Cloud Firestore
-    // This guarantees that ANY device (including on Netlify, phone, mobile browser) sees it!
+    // Save complete binary directly to Firebase Cloud Firestore (with chunking for large PPTs)
     await saveDocumentToCloud(docItem);
 
     return docItem;
@@ -126,7 +125,7 @@ export const UploadDropzone: React.FC<UploadDropzoneProps> = ({
 
     if (newDocs.length > 0) {
       onAddDocuments(newDocs);
-      setUploadFeedback(`Uploaded ${newDocs.length} file${newDocs.length > 1 ? 's' : ''} to Cloud! Synced across all devices.`);
+      setUploadFeedback(`Uploaded ${newDocs.length} file${newDocs.length > 1 ? 's' : ''} to Cloud! Original format preserved.`);
       setTimeout(() => setUploadFeedback(null), 5000);
     }
   };
@@ -218,20 +217,20 @@ export const UploadDropzone: React.FC<UploadDropzoneProps> = ({
 
           {/* Heading */}
           <h2 className="mt-4 text-xl sm:text-2xl font-bold tracking-tight text-slate-800 font-display">
-            {isUploading ? 'Syncing to Cloud Database...' : 'Upload Presentations or Documents'}
+            {isUploading ? 'Saving exact file to Cloud...' : 'Upload Presentations or Documents'}
           </h2>
 
           {/* Sub-instruction */}
           <p className="mt-1.5 text-sm sm:text-base font-medium text-slate-600">
             {isUploading
-              ? 'Saving to Firebase Cloud so it is available across all your phones & devices...'
+              ? 'Uploading presentation binary to cloud database so it downloads in exact PPT format...'
               : 'Click to upload or drag and drop files'}
           </p>
 
           {/* Formats info */}
           <div className="mt-3 flex items-center gap-2">
             <span className="text-xs font-semibold uppercase tracking-wider text-slate-500 bg-white/90 px-3 py-1 rounded-full border border-slate-200/80 shadow-2xs">
-              PPT, PDF, DOCX, TXT &amp; more • Syncs across all devices
+              PPT, PDF, DOCX, TXT &amp; more • Preserves exact original format
             </span>
           </div>
 

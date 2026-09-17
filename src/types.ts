@@ -24,6 +24,9 @@ export interface StudyDoc {
   fileName?: string;
   fileDownloadUrl?: string;
   storedFileName?: string;
+  mimeType?: string;
+  hasChunks?: boolean;
+  totalChunks?: number;
   summary: string;
   tags: string[];
   author: string;
